@@ -1,0 +1,10 @@
+FROM node:lts-alpine
+
+RUN mkdir /app
+WORKDIR /app
+
+COPY ./backend ./
+
+RUN npm install
+
+CMD ["npm", "run", "dev"]

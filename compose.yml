@@ -1,0 +1,32 @@
+version: "3"
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: ./Dockerfile.frontend
+    networks:
+      - base
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+  backend:
+    build:
+      context: .
+      dockerfile: ./Dockerfile.backend
+    networks:
+      - base
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+  nginx:
+    image: nginx:latest
+    networks:
+      - base
+    ports:
+      - "3000:80"
+    volumes:
+      - ./conf/nginx/default.conf:/etc/nginx/conf.d/default.conf
+
+networks:
+  base:
