@@ -1,6 +1,6 @@
 // チャットルームに入る
-export async function fetchJoinRoom(roomId: string, token: string) {
-  return fetch(`/api/room/${roomId}/join`, {
+export async function fetchJoinRoom(token: string) {
+  return fetch(`/api/room`, {
     method: "POST",
     headers: {
       "Content-type": "application/json",
@@ -9,27 +9,34 @@ export async function fetchJoinRoom(roomId: string, token: string) {
   });
 }
 // チャットを送る
-export async function fetchPostChat(
-  roomId: string,
-  token: string,
-  message: string
-) {
-  return fetch(`/api/room/${roomId}/chat`, {
+export async function fetchPostChat(token: string, message: string) {
+  let msg = message;
+  if (message.length > 100) {
+    msg = msg.slice(0, 100);
+  }
+  return fetch(`/api/room/chat`, {
     method: "POST",
     headers: {
       "Content-type": "application/json",
       "X-TOKEN": token,
     },
     body: JSON.stringify({
-      roomId,
-      message,
+      msg,
     }),
   });
 }
 // チャットルームから離脱する
-export async function fetchDelete(roomId: string, token: string) {
-  return fetch(`/api/room/${roomId}/leave`, {
-    method: "delete",
+export async function fetchLeave(token: string) {
+  return fetch(`/api/room/leave`, {
+    method: "POST",
+    headers: {
+      "X-TOKEN": token,
+    },
+  });
+}
+export async function fetchMessages(token: string) {
+  return fetch(`/api/room/messages`, {
+    method: "GET",
     headers: {
       "X-TOKEN": token,
     },

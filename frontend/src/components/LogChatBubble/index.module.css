@@ -1,0 +1,37 @@
+.bubble {
+  padding: 10px;
+  border-radius: 20px;
+  margin: 5px;
+  max-width: 300px;
+}
+
+.myBubble {
+  background-color: #dcf8c6;
+}
+
+.myLine {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.otherBubble {
+  background-color: #ffffff;
+}
+
+.otherLine {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.otherLine .time {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+  font-size: 0.8em;
+}
+.myLine .time {
+  display: flex;
+  justify-content: flex-start;
+  max-width: 280px;
+  font-size: 0.8em;
+}
