@@ -18,26 +18,33 @@ function App() {
   const [sync, setSync] = useState<number>(0);
   const [msgSync, setMsgSync] = useState<number>(0);
   const syncMessages = async (tk: string) => {
-    const res = await fetchMessagesCheckForUpdate(tk, lastUpdate);
-    if (res && res.ok) {
-      const msgs = await res.json();
-      if (msgs.length) {
-        setLastUpdate(Date.now());
-        setMessages(
-          msgs.map((m) => {
-            return {
-              action: m.action,
-              token: m.user,
-              createdAt: new Date(m.createdAt),
-              isMine: m.user === token,
-              message: m.message,
-            };
-          })
-        );
+    try {
+      const res = await fetchMessagesCheckForUpdate(tk, lastUpdate);
+      if (res && res.ok) {
+        const msgs = await res.json();
+        if (msgs.length) {
+          setLastUpdate(Date.now());
+          setMessages(
+            msgs.map((m) => {
+              return {
+                action: m.action,
+                token: m.user,
+                createdAt: new Date(m.createdAt),
+                isMine: m.user === token,
+                message: m.message,
+              };
+            })
+          );
+        }
+      } else {
+        console.log("info", "no update.");
+        return;
       }
-    } else {
-      console.log("info", "no update.");
-      return;
+    } catch (e) {
+      console.log(e);
+      setToken(null);
+      localStorage.removeItem("x-token");
+      alert("ルーム情報を取得できないため、退出します。");
     }
   };
   const handleChatStartSubmit = async () => {
@@ -51,8 +58,8 @@ function App() {
     // 部屋に参加する
     const r = await fetchJoinRoom(tk);
     if (r.ok) {
-      await syncMessages(tk);
       setToken(tk);
+      await syncMessages(tk);
     }
   };
   const handleSendChat = async (msg: IChat) => {

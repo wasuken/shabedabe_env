@@ -53,7 +53,7 @@ export async function fetchMessagesCheckForUpdate(
       return fetchMessages(token);
     }
   } else {
-    throw new Error("fetch error.");
+    return Promise.reject("fetch error");
   }
 }
 export async function fetchMessages(token: string) {

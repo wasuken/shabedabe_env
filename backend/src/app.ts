@@ -248,6 +248,7 @@ app.get("/api/room/map", (req: Request, res: Response) => {
 app.get("/api/reset", (_req: Request, res: Response) => {
   roomMap.clear();
   userRoomMap.clear();
+  roomLastUpdateMap.clear();
   for (let i = 0; i < waitRooms.length; i++) {
     delete waitRooms[i];
   }
