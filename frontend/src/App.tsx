@@ -1,31 +1,43 @@
 import { useState, useEffect } from "react";
 import ChatWindow from "./components/ChatWindow";
 import { IChat, ILog } from "@/types";
-import { fetchJoinRoom, fetchMessages, fetchLeave, fetchPostChat } from "@/api";
+import {
+  fetchJoinRoom,
+  fetchMessagesCheckForUpdate,
+  fetchLeave,
+  fetchPostChat,
+} from "@/api";
 import { v4 as uuidv4 } from "uuid";
 import styles from "./App.module.css";
 
 function App() {
   const [messages, setMessages] = useState<(ILog | IChat)[]>([]);
   const [token, setToken] = useState<string | null>();
+  const [lastUpdate, setLastUpdate] = useState<number>(0);
   // 更新してほしいときに逆の値に切り替える
   const [sync, setSync] = useState<number>(0);
   const [msgSync, setMsgSync] = useState<number>(0);
   const syncMessages = async (tk: string) => {
-    const res = await fetchMessages(tk);
-    const msgs = await res.json();
-    if (msgs.length) {
-      setMessages(
-        msgs.map((m) => {
-          return {
-            action: m.action,
-            token: m.user,
-            createdAt: new Date(m.createdAt),
-            isMine: m.user === token,
-            message: m.message,
-          };
-        })
-      );
+    const res = await fetchMessagesCheckForUpdate(tk, lastUpdate);
+    if (res && res.ok) {
+      const msgs = await res.json();
+      if (msgs.length) {
+        setLastUpdate(Date.now());
+        setMessages(
+          msgs.map((m) => {
+            return {
+              action: m.action,
+              token: m.user,
+              createdAt: new Date(m.createdAt),
+              isMine: m.user === token,
+              message: m.message,
+            };
+          })
+        );
+      }
+    } else {
+      console.log("info", "no update.");
+      return;
     }
   };
   const handleChatStartSubmit = async () => {
@@ -59,7 +71,7 @@ function App() {
     const id = setInterval(() => {
       setSync(Date.now);
       if (!token) clearInterval(msgSync);
-    }, 10000);
+    }, 3000);
     setMsgSync(id);
     if (localStorage.getItem("x-token")) {
       setToken(localStorage.getItem("x-token"));

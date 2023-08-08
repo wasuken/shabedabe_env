@@ -11,6 +11,8 @@ app.use(
   })
 );
 app.use(bodyParser.json());
+// 部屋の最新更新日
+const roomLastUpdateMap: Map<RoomId, number> = new Map();
 
 type Token = string;
 type RoomId = string;
@@ -194,20 +196,52 @@ function genUserRoomMapTableHTML() {
   `;
 }
 
+function genLastUpdateRoomHTML() {
+  let roomLastUpdatePairS = "";
+  let keys = Array.from(roomLastUpdateMap.keys());
+  for (const k of keys) {
+    const rid = roomLastUpdateMap.get(k);
+    if (rid) {
+      roomLastUpdatePairS += `
+        <tr>
+          <td>${k}</td>
+          <td>${rid}</td>
+        </tr>
+      `;
+    }
+  }
+  return `
+    <h2>roomLastUpdateMap</h2>
+    <table>
+     <thead>
+       <tr>
+         <th>room id</th>
+         <th>last update</th>
+       </tr>
+     </thead>
+     <tbody>
+      ${roomLastUpdatePairS}
+     </tbody>
+    </table>
+  `;
+}
+
 app.get("/api/room/map", (req: Request, res: Response) => {
   res.send(`
            <head>
-            <link rel="stylesheet" type="text/css" href="/table.css" />
+           <link rel="stylesheet" type="text/css" href="/table.css" />
            </head>
            <body>
-            <a href="/api/reset">reset</a>
-            <hr />
-            ${genRoomMapTableHTML()}
-            <hr />
-            ${genUserRoomMapTableHTML()}
-            <hr />
-            ${genWaitRoomHTML()}
-            <hr />
+           <a href="/api/reset">reset</a>
+           <hr />
+           ${genRoomMapTableHTML()}
+           <hr />
+           ${genUserRoomMapTableHTML()}
+           <hr />
+           ${genLastUpdateRoomHTML()}
+           <hr />
+           ${genWaitRoomHTML()}
+           <hr />
            </body>
            `);
 });
@@ -232,6 +266,7 @@ app.post("/api/room", (req: Request, res: Response) => {
     res.status(400).json({ msg: "already join room, please leave room." });
     return;
   }
+  let rid: string = "";
   if (waitRooms.length > 0) {
     const [roomId, err, emsg] = joinRoom(token);
     if (err) {
@@ -239,14 +274,28 @@ app.post("/api/room", (req: Request, res: Response) => {
       res.json({ msg: emsg });
       return;
     }
-    res.json({ roomId });
-    return;
+    rid = roomId;
   } else {
     // 待機部屋0なら作る
-    const roomId = createRoom(token, "/chat");
-    res.json({ roomId });
-    return;
+    rid = createRoom(token, "/chat");
   }
+  roomLastUpdateMap.set(rid, Date.now());
+  res.json({ roomId: rid });
+  return;
+});
+
+app.head("/api/room", (req, res) => {
+  const token = req.headers["x-token"] as string;
+  const roomId = userRoomMap.get(token);
+  if (roomId) {
+    const lastUpdate = roomLastUpdateMap.get(roomId);
+    if (lastUpdate) {
+      res.set("X-Last-Update", `${lastUpdate}`);
+      res.status(200).end(); // ボディなしで200 OKを返す
+      return;
+    }
+  }
+  res.status(400).end(); // ボディなしで200 OKを返す
 });
 
 // 作成したユーザーと相手のユーザー
@@ -292,6 +341,7 @@ app.post("/api/room/chat", (req: Request, res: Response) => {
     },
   ];
   fs.writeFileSync(room.chatPath, JSON.stringify(data));
+  roomLastUpdateMap.set(room.id, Date.now());
   res.json(data);
 });
 

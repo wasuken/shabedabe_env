@@ -7,6 +7,8 @@ services:
       dockerfile: ./Dockerfile.frontend
     networks:
       - base
+    environment:
+      TZ: Asia/Tokyo
     volumes:
       - ./frontend:/app
       - /app/node_modules
@@ -16,12 +18,16 @@ services:
       dockerfile: ./Dockerfile.backend
     networks:
       - base
+    environment:
+      TZ: Asia/Tokyo
     volumes:
       - ./backend:/app
       - /app/node_modules
       - /chat
   nginx:
     image: nginx:latest
+    environment:
+      TZ: Asia/Tokyo
     networks:
       - base
     ports:
