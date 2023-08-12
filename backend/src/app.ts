@@ -1,10 +1,8 @@
 import express from "express";
-import fs from "fs";
-import crypto from "crypto";
 const app = express();
 import { Request, Response } from "express";
-const bodyParser = require("body-parser");
-// urlencodedとjsonは別々に初期化する
+import * as bodyParser from "body-parser";
+import Manage from "./Manage";
 app.use(
   bodyParser.urlencoded({
     extended: true,
@@ -12,11 +10,11 @@ app.use(
 );
 app.use(bodyParser.json());
 
-import Manage from "./Manage";
-
 const mng = new Manage();
 
-app.get("/mng/room/map", (req: Request, res: Response) => {
+// 管理系
+// 後ほどファイルを分ける？
+app.get("/mng/room/map", (_req: Request, res: Response) => {
   res.send(mng.roomAllMap());
 });
 app.get("/mng/reset", (_req: Request, res: Response) => {
@@ -65,10 +63,6 @@ app.get("/api/room/messages", (req: Request, res: Response) => {
   } else {
     res.status(400).json({ msg: "invalid room obj" });
   }
-});
-
-app.get("/api/room/topics", (req: Request, res: Response) => {
-  const token = req.headers["x-token"] as string;
 });
 
 // ルームにChatを登録する
