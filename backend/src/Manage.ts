@@ -1,6 +1,14 @@
 import fs from "fs";
 import crypto from "crypto";
-import { Token, RoomId, IRoom, RoomLog, IUserChatAction } from "./types";
+import {
+  Action,
+  Token,
+  RoomId,
+  IRoom,
+  RoomLog,
+  IUserChatAction,
+  topics,
+} from "./types";
 
 export default class Manage {
   // TODO ここらへんの入れ替え処理は別プロセスにしたほうがいいかもredisとかで
@@ -304,6 +312,9 @@ export default class Manage {
     return null;
   }
   chat(token: Token, msg: string): IUserChatAction | boolean {
+    return this.#chat("chat", token, msg);
+  }
+  #chat(action: Action, token: Token, msg: string) {
     const room = this.getRoomInfoWhereUserAreJoin(token);
     if (!room) {
       return false;
@@ -321,7 +332,7 @@ export default class Manage {
     data = [
       ...data,
       {
-        action: "chat",
+        action: action,
         user: token,
         message: msg,
         createdAt: d,
@@ -384,5 +395,20 @@ export default class Manage {
       console.log("error", `not found room path[path: ${chatPath}].`);
       return null;
     }
+  }
+  // 後に別ファイルに移動するかも
+  #shuffleArray(array: any[]): any[] {
+    return array.slice().sort(() => Math.random() - Math.random());
+  }
+  sendRandomTopic(token: Token): boolean {
+    const room = this.getRoomInfoWhereUserAreJoin(token);
+    if (!room) {
+      console.log("error", `can not found room[token: ${token}].`);
+      return false;
+    }
+    const topic = this.#shuffleArray(topics)[0];
+    const msg = `話題BOXごそごそ.... ${topic}!${topic}についてなんでも話してみよう`;
+    this.#chat("info", token, msg);
+    return false;
   }
 }

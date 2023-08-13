@@ -9,18 +9,21 @@ interface IProps {
   logs: (ILog | IChat)[];
   sendChat: (msg: IChat) => Promise<void>;
   leave: () => Promise<Response>;
+  requestTopic: () => Promise<Response>;
 }
 
 function viewLog(log: IChat | ILog, index: number) {
-  if (log.action === "chat") {
-    const ch = log as IChat;
-    return <LogChatBubble chat={ch} key={index} />;
-  } else {
-    return <LogBubble log={log} key={index} />;
-  }
+  const ch = log as IChat;
+  return <LogChatBubble chat={ch} key={index} />;
 }
 
-const ChatWindow: React.FC<IProps> = ({ logs, sendChat, token, leave }) => {
+const ChatWindow: React.FC<IProps> = ({
+  logs,
+  sendChat,
+  token,
+  leave,
+  requestTopic,
+}) => {
   const [inputChat, setInputChat] = useState("");
   const ref = useRef<HTMLDivElement>(null);
 
@@ -53,12 +56,23 @@ const ChatWindow: React.FC<IProps> = ({ logs, sendChat, token, leave }) => {
       ref.current.scrollTop = scroll;
     }
   };
+  const handleTopic = () => {
+    requestTopic();
+  };
   useEffect(() => {
     initScroll();
   }, [logs.length]);
 
   return (
     <div className={styles.container}>
+      <div className={styles.headerContainer}>
+        <button onClick={handleTopic} className={styles.headerButton}>
+          話題BOX
+        </button>
+        <button onClick={handleLeave} className={styles.headerButton}>
+          退室
+        </button>
+      </div>
       <div className={styles.messageContainer} ref={ref}>
         {logs.map((msg, index) => viewLog(msg, index))}
       </div>
@@ -72,9 +86,6 @@ const ChatWindow: React.FC<IProps> = ({ logs, sendChat, token, leave }) => {
         />
         <button onClick={handleSend} className={styles.sendButton}>
           送信
-        </button>
-        <button onClick={handleLeave} className={styles.sendButton}>
-          退室
         </button>
       </div>
     </div>

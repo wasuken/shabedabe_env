@@ -19,9 +19,10 @@ app.get("/mng/room/map", (_req: Request, res: Response) => {
 });
 app.get("/mng/reset", (_req: Request, res: Response) => {
   mng.reset();
-  res.redirect("/api/room/map");
+  res.redirect("/mng/room/map");
 });
 
+// API系
 // ルームに参加する/作成する
 app.post("/api/room", (req: Request, res: Response) => {
   const token = req.headers["x-token"] as string;
@@ -36,6 +37,13 @@ app.post("/api/room", (req: Request, res: Response) => {
   }
   const rid = mng.createOrJoinRoom(token);
   res.json({ roomId: rid });
+  return;
+});
+
+app.post("/api/room/topic", (req: Request, res: Response) => {
+  const token = req.headers["x-token"] as string;
+  const topic = mng.sendRandomTopic(token);
+  res.json({ topic });
   return;
 });
 

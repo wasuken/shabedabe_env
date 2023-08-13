@@ -16,6 +16,8 @@ const LogChatBubble: React.FC<ChatBubbleProps> = (props) => {
             isMine ? styles.myBubble : styles.otherBubble
           }`}
         >
+          <small>[{isMine ? "あなた" : "相手"}]</small>
+          <br />
           {message}
           <div className={styles.time}>
             <small>{createdAt.toLocaleTimeString()}</small>

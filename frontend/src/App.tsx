@@ -6,6 +6,7 @@ import {
   fetchMessagesCheckForUpdate,
   fetchLeave,
   fetchPostChat,
+  fetchTopic,
 } from "@/api";
 import { v4 as uuidv4 } from "uuid";
 import styles from "./App.module.css";
@@ -118,6 +119,12 @@ function App() {
         token={token}
         logs={messages}
         sendChat={handleSendChat}
+        requestTopic={async () => {
+          return fetchTopic(token).then((r) => {
+            setSync(Date.now());
+            return r;
+          });
+        }}
       />
     </div>
   );

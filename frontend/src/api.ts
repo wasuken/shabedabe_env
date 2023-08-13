@@ -64,3 +64,12 @@ export async function fetchMessages(token: string) {
     },
   });
 }
+export async function fetchTopic(token: string) {
+  return fetch(`/api/room/topic`, {
+    method: "POST",
+    headers: {
+      "Content-type": "application/json",
+      "X-TOKEN": token,
+    },
+  });
+}

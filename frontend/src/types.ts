@@ -5,9 +5,9 @@ export interface ILog {
   isMine: boolean;
   token: string;
   createdAt: Date;
+  message: string;
 }
 
 export interface IChat extends ILog {
   action: "chat";
-  message: string;
 }

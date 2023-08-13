@@ -25,6 +25,8 @@ const LogBubble: React.FC<LogBubbleProps> = (props) => {
             isMine ? styles.myBubble : styles.otherBubble
           }`}
         >
+          [{isMine ? "あなた" : "相手"}]
+          <br />
           {actionDesc}
           <div className={styles.time}>
             <small>{createdAt.toLocaleTimeString()}</small>

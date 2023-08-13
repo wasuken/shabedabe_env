@@ -7,9 +7,18 @@
   border: 1px solid #ccc;
   background-color: #f2f2f2;
 }
+.headerContainer {
+  display: flex;
+  height: 30px;
+  padding: 10px;
+  background: white;
+  border-radius: 5px;
+  border: 1px solid #ccc;
+  justify-content: space-between;
+}
 .messageContainer {
   display: flex;
-  height: 80vh;
+  height: 70vh;
   flex-direction: column;
   max-width: 400px;
   overflow-y: scroll;
@@ -43,4 +52,17 @@
 }
 .sendButton:hover {
   background-color: #009900;
+}
+
+.headerButton {
+  padding: 5px 10px 5px 10px;
+  border: none;
+  background-color: #116633;
+  color: white;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+.headerButton:hover {
+  background-color: #226633;
 }
