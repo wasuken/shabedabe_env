@@ -1,65 +1,46 @@
-import fs from "fs";
-import crypto from "crypto";
+import fs from 'fs';
+import crypto from 'crypto';
+import { Action, Token, RoomId, IRoom, RoomLog, IUserChatAction, topics } from './types';
+import { config } from 'dotenv';
+import { RedisClientType, createClient } from 'redis';
 import {
-  Action,
-  Token,
-  RoomId,
-  IRoom,
-  RoomLog,
-  IUserChatAction,
-  topics,
-} from "./types";
+  RedisClientMapWrapper,
+  RedisClientSetsMapper,
+  RedisClientKVWrapper,
+} from './RedisClientWrapper';
+
+config();
 
 export default class Manage {
   // TODO ここらへんの入れ替え処理は別プロセスにしたほうがいいかもredisとかで
   //
   // チャット部屋変数
-  #roomMap: Map<RoomId, IRoom>;
+  #roomMap: RedisClientMapWrapper<RoomId, IRoom>;
   // ユーザー部屋参加変数
-  #userRoomMap: Map<Token, RoomId>;
+  #userRoomMap: RedisClientKVWrapper;
   // 参加待部屋変数
-  #waitRooms: RoomId[];
+  #waitRooms: RedisClientSetsMapper;
   // 部屋の最新更新日
-  #roomLastUpdateMap: Map<RoomId, number>;
-  // 通信中のユーザーリスト
-  #roomLockMap: Map<Token, number>;
+  #roomLastUpdateMap: RedisClientKVWrapper;
+  // redis client
+  #client: RedisClientType;
 
   constructor() {
-    this.#roomMap = new Map();
-    this.#userRoomMap = new Map();
-    this.#waitRooms = [];
-    this.#roomLastUpdateMap = new Map();
-    this.#roomLockMap = new Map();
-  }
+    this.#client = createClient({ url: process.env.REDIS_URL });
+    this.#client.on('error', (err) => console.log('Redis Client Error', err));
+    this.#client.connect().then(() => console.log('info', 'connected'));
 
-  // tokenと対応する部屋をロックする。
-  // 書き込み系の処理の際には基本実行する。
-  #lockRoom(roomId: RoomId): boolean {
-    const room = this.#roomMap.get(roomId);
-    if (room) {
-      if (this.#roomLockMap.has(room.id)) return false;
-      this.#roomLockMap.set(room.id, 1);
-      return true;
-    }
-    return false;
-  }
-  #unlockRoom(roomId: RoomId): boolean {
-    const room = this.#roomMap.get(roomId);
-    if (room) {
-      if (this.#roomLockMap.has(room.id)) {
-        this.#roomLockMap.delete(room.id);
-        return true;
-      }
-      return false;
-    }
-    return false;
+    this.#roomMap = new RedisClientMapWrapper(this.#client, 'roomMap');
+    this.#userRoomMap = new RedisClientKVWrapper(this.#client, 'userRoomMap');
+    this.#waitRooms = new RedisClientSetsMapper(this.#client, 'waitRooms');
+    this.#roomLastUpdateMap = new RedisClientKVWrapper(this.#client, 'roomLastUpdateMap');
   }
 
   // 1. ルームファイルを作成
   // 2. #roomMapにユーザーを登録
   // 3. #userRoomMapにユーザーを登録
   // 4. #waitRoomsにユーザーを追加
-  createRoom(token: string, dirPath: string): RoomId | null {
+  async createRoom(token: string, dirPath: string): Promise<RoomId | null> {
     const id = crypto.randomUUID();
     const chatPath = `${dirPath}/${id}`;
     if (fs.existsSync(chatPath)) {
@@ -68,265 +49,249 @@ export default class Manage {
       const d = new Date();
       const log: RoomLog = [
         {
-          action: "create",
+          action: 'create',
           user: token,
           createdAt: d,
         },
         {
-          action: "join",
+          action: 'join',
           user: token,
           createdAt: d,
         },
       ];
       fs.writeFileSync(chatPath, JSON.stringify(log));
     }
-    this.#roomMap.set(id, { id, users: [token, undefined], chatPath });
-    this.#userRoomMap.set(token, id);
-    this.#waitRooms.push(id);
+    await this.#roomMap.set(id, { id, users: [token, undefined], chatPath });
+    await this.#userRoomMap.set(token, id);
+    await this.#waitRooms.push(id);
     return id;
   }
 
   // そこそこ長いので関数化
   // Goみたいな書き方してる
   // ここではTSの言葉で話せ
-  joinRoom(token: string): RoomId | null {
+  async joinRoom(token: string): Promise<RoomId | null> {
     // 待機部屋あるなら参加
-    const roomId = this.#waitRooms.pop();
+    const roomId = await this.#waitRooms.pop();
     if (!roomId) {
       return null;
     }
-    const room = this.#roomMap.get(roomId);
+    const room = await this.#roomMap.get(roomId);
     if (!room) {
-      return null;
-    }
-    const lock = this.#lockRoom(room.id);
-    if (!lock) {
-      console.log("error", "failed lock.");
       return null;
     }
     const [a] = room.users;
     room.users = [a, token];
-    this.#roomMap.set(roomId, room);
-    this.#userRoomMap.set(token, roomId);
+    await this.#roomMap.set(roomId, room);
+    await this.#userRoomMap.set(token, roomId);
     const chatPath = `/chat/${room.id}`;
 
-    const textj = fs.readFileSync(chatPath, "utf-8");
+    const textj = fs.readFileSync(chatPath, 'utf-8');
     let data = JSON.parse(textj);
     const d = new Date();
     data = [
       ...data,
       {
-        action: "join",
+        action: 'join',
         user: token,
         createdAt: d,
       },
     ];
     fs.writeFileSync(room.chatPath, JSON.stringify(data));
-    const unlock = this.#unlockRoom(room.id);
-    if (!unlock) {
-      console.log("error", "failed unlock.");
-      return null;
-    }
     return roomId;
   }
 
-  getRoomInfoWhereUserAreJoin(token: Token): IRoom | null {
-    const id = this.#userRoomMap.get(token);
+  async getRoomInfoWhereUserAreJoin(token: Token): Promise<IRoom | null> {
+    const id = await this.#userRoomMap.get(token);
     if (!id) {
-      // res.status(400).json({ msg: "not found room: " + id });
       return null;
     }
-    const room = this.#roomMap.get(id);
+    const room = await this.#roomMap.get(id);
     if (!room) {
-      // res.status(400).json({ msg: "not found room: " + id });
       return null;
     }
     return room;
   }
 
-  genRoomMapTableHTML() {
-    const keys = Array.from(this.#roomMap.keys());
-    let roomListS = "";
-    for (const k of keys) {
-      const room = this.#roomMap.get(k);
-      if (room) {
-        const [a, bb] = room?.users;
-        const b = bb || "empty user";
-        roomListS += `
-        <tr>
-          <td>${room.id}</td>
-          <td>${a}</td>
-          <td>${b}</td>
-          <td>${room.chatPath}</td>
-        </tr>
-      `;
-      }
-    }
-    return `
-    <h2>#roomMap</h2>
-    <table>
-     <thead>
-       <tr>
-         <th>room id</th>
-         <th>userA</th>
-         <th>userB</th>
-         <th>chatPath</th>
-       </tr>
-     </thead>
-     <tbody>
-      ${roomListS}
-     </tbody>
-    </table>
-  `;
-  }
-  genWaitRoomHTML() {
-    const rooms = this.#waitRooms.map((r) => `<li>${r}</li>`).join("");
-    return `
-  <h2>Wait Rooms</h2>
-   <ul>
-   ${rooms}
-   </ul>
-  `;
-  }
-  genuserRoomMapTableHTML() {
-    let userRoomPairS = "";
-    let keys = Array.from(this.#userRoomMap.keys());
-    for (const k of keys) {
-      const rid = this.#userRoomMap.get(k);
-      if (rid) {
-        userRoomPairS += `
-        <tr>
-          <td>${k}</td>
-          <td>${rid}</td>
-        </tr>
-      `;
-      }
-    }
-    return `
-    <h2>userMap</h2>
-    <table>
-     <thead>
-       <tr>
-         <th>user token</th>
-         <th>room id</th>
-       </tr>
-     </thead>
-     <tbody>
-      ${userRoomPairS}
-     </tbody>
-    </table>
-  `;
-  }
-
-  genLastUpdateRoomHTML() {
-    let roomLastUpdatePairS = "";
-    let keys = Array.from(this.#roomLastUpdateMap.keys());
-    for (const k of keys) {
-      const dtn = this.#roomLastUpdateMap.get(k);
-      if (dtn) {
-        const dtf = new Date(dtn);
-        roomLastUpdatePairS += `
-        <tr>
-          <td>${k}</td>
-          <td>${dtf.toLocaleString("ja-JP")}</td>
-        </tr>
-      `;
-      }
-    }
-    return `
-    <h2>#roomLastUpdateMap</h2>
-    <table>
-     <thead>
-       <tr>
-         <th>room id</th>
-         <th>last update</th>
-       </tr>
-     </thead>
-     <tbody>
-      ${roomLastUpdatePairS}
-     </tbody>
-    </table>
-  `;
-  }
-  roomAllMap() {
-    return `
-           <head>
-           <link rel="stylesheet" type="text/css" href="/table.css" />
-           </head>
-           <body>
-           <a href="/mng/reset">reset</a>
-           <hr />
-           ${this.genRoomMapTableHTML()}
-           <hr />
-           ${this.genuserRoomMapTableHTML()}
-           <hr />
-           ${this.genLastUpdateRoomHTML()}
-           <hr />
-           ${this.genWaitRoomHTML()}
-           <hr />
-           </body>
-           `;
-  }
-  reset() {
-    this.#roomMap.clear();
-    this.#userRoomMap.clear();
-    this.#roomLastUpdateMap.clear();
-    for (let i = 0; i < this.#waitRooms.length; i++) {
-      delete this.#waitRooms[i];
-    }
-  }
+  //  genRoomMapTableHTML() {
+  //    const keys = Array.from(this.#roomMap.keys());
+  //    let roomListS = '';
+  //    for (const k of keys) {
+  //      const room = this.#roomMap.get(k);
+  //      if (room) {
+  //        const [a, bb] = room?.users;
+  //        const b = bb || 'empty user';
+  //        roomListS += `
+  //	<tr>
+  //	  <td>${room.id}</td>
+  //	  <td>${a}</td>
+  //	  <td>${b}</td>
+  //	  <td>${room.chatPath}</td>
+  //	</tr>
+  //      `;
+  //      }
+  //    }
+  //    return `
+  //    <h2>#roomMap</h2>
+  //    <table>
+  //     <thead>
+  //       <tr>
+  //	 <th>room id</th>
+  //	 <th>userA</th>
+  //	 <th>userB</th>
+  //	 <th>chatPath</th>
+  //       </tr>
+  //     </thead>
+  //     <tbody>
+  //      ${roomListS}
+  //     </tbody>
+  //    </table>
+  //  `;
+  //  }
+  //  genWaitRoomHTML() {
+  //    const rooms = this.#waitRooms.map((r) => `<li>${r}</li>`).join('');
+  //    return `
+  //  <h2>Wait Rooms</h2>
+  //   <ul>
+  //   ${rooms}
+  //   </ul>
+  //  `;
+  //  }
+  //  genuserRoomMapTableHTML() {
+  //    let userRoomPairS = '';
+  //    let keys = Array.from(this.#userRoomMap.keys());
+  //    for (const k of keys) {
+  //      const rid = this.#userRoomMap.get(k);
+  //      if (rid) {
+  //        userRoomPairS += `
+  //	<tr>
+  //	  <td>${k}</td>
+  //	  <td>${rid}</td>
+  //	</tr>
+  //      `;
+  //      }
+  //    }
+  //    return `
+  //    <h2>userMap</h2>
+  //    <table>
+  //     <thead>
+  //       <tr>
+  //	 <th>user token</th>
+  //	 <th>room id</th>
+  //       </tr>
+  //     </thead>
+  //     <tbody>
+  //      ${userRoomPairS}
+  //     </tbody>
+  //    </table>
+  //  `;
+  //  }
+  //
+  //  genLastUpdateRoomHTML() {
+  //    let roomLastUpdatePairS = '';
+  //    let keys = Array.from(this.#roomLastUpdateMap.keys());
+  //    for (const k of keys) {
+  //      const dtn = this.#roomLastUpdateMap.get(k);
+  //      if (dtn) {
+  //        const dtf = new Date(dtn);
+  //        roomLastUpdatePairS += `
+  //	<tr>
+  //	  <td>${k}</td>
+  //	  <td>${dtf.toLocaleString('ja-JP')}</td>
+  //	</tr>
+  //      `;
+  //      }
+  //    }
+  //    return `
+  //    <h2>#roomLastUpdateMap</h2>
+  //    <table>
+  //     <thead>
+  //       <tr>
+  //	 <th>room id</th>
+  //	 <th>last update</th>
+  //       </tr>
+  //     </thead>
+  //     <tbody>
+  //      ${roomLastUpdatePairS}
+  //     </tbody>
+  //    </table>
+  //  `;
+  //  }
+  //  roomAllMap() {
+  //    return `
+  //	   <head>
+  //	   <link rel="stylesheet" type="text/css" href="/table.css" />
+  //	   </head>
+  //	   <body>
+  //	   <a href="/mng/reset">reset</a>
+  //	   <hr />
+  //	   ${this.genRoomMapTableHTML()}
+  //	   <hr />
+  //	   ${this.genuserRoomMapTableHTML()}
+  //	   <hr />
+  //	   ${this.genLastUpdateRoomHTML()}
+  //	   <hr />
+  //	   ${this.genWaitRoomHTML()}
+  //	   <hr />
+  //	   </body>
+  //	   `;
+  //  }
+  //reset() {
+  //  this.#roomMap.clear();
+  //  this.#userRoomMap.clear();
+  //  this.#roomLastUpdateMap.clear();
+  //  for (let i = 0; i < this.#waitRooms.length; i++) {
+  //    delete this.#waitRooms[i];
+  //  }
+  //}
   isUserJoined(token: Token) {
     return this.#userRoomMap.has(token);
   }
-  createOrJoinRoom(token: Token): RoomId | null {
-    let rid: string = "";
-    if (this.#waitRooms.length > 0) {
-      const roomId = this.joinRoom(token);
+  async createOrJoinRoom(token: Token): Promise<RoomId | null> {
+    let rid: string = '';
+    const len = await this.#waitRooms.length();
+    if (len > 0) {
+      const roomId = await this.joinRoom(token);
       if (!roomId) {
-        console.log("error", "failed join room");
+        console.log('error', 'failed join room');
         return rid;
       }
       rid = roomId;
     } else {
       // 待機部屋0なら作る
-      const _rid = this.createRoom(token, "/chat");
+      const _rid = await this.createRoom(token, '/chat');
       if (_rid) {
         rid = _rid;
       } else {
-        console.log("error", "failed join room");
+        console.log('error', 'failed create room');
         return null;
       }
     }
-    this.#roomLastUpdateMap.set(rid, Date.now());
+    this.#roomLastUpdateMap.set(rid, `${Date.now()}`);
     return rid;
   }
   // tokenに基づくルームの最終更新時間(unix値)を返却する。
   // 存在しなければnullを返す
-  checkUpdate(token: Token): number | null {
-    const roomId = this.#userRoomMap.get(token);
+  async checkUpdate(token: Token): Promise<number | null> {
+    const roomId = await this.#userRoomMap.get(token);
     if (!roomId) return null;
-    const lUpd = this.#roomLastUpdateMap.get(roomId);
+    const lUpd = await this.#roomLastUpdateMap.get(roomId);
     if (roomId && lUpd) {
-      return lUpd;
+      return parseInt(lUpd);
     }
     return null;
   }
-  chat(token: Token, msg: string): IUserChatAction | boolean {
-    return this.#chat("chat", token, msg);
+  async chat(token: Token, msg: string): Promise<IUserChatAction | boolean> {
+    return this.#chat('chat', token, msg);
   }
-  #chat(action: Action, token: Token, msg: string) {
-    const room = this.getRoomInfoWhereUserAreJoin(token);
+  async #chat(action: Action, token: Token, msg: string): Promise<IUserChatAction | boolean> {
+    const room = await this.getRoomInfoWhereUserAreJoin(token);
     if (!room) {
-      return false;
-    }
-    const lock = this.#lockRoom(room.id);
-    if (!lock) {
-      console.log("error", "failed lock.");
       return false;
     }
     const chatPath = `/chat/${room.id}`;
 
-    const textj = fs.readFileSync(chatPath, "utf-8");
+    const textj = fs.readFileSync(chatPath, 'utf-8');
     let data = JSON.parse(textj);
     const d = new Date();
     data = [
@@ -339,76 +304,60 @@ export default class Manage {
       },
     ];
     fs.writeFileSync(room.chatPath, JSON.stringify(data));
-    this.#roomLastUpdateMap.set(room.id, Date.now());
-    const unlock = this.#unlockRoom(room.id);
-    if (!unlock) {
-      console.log("error", "failed unlock.");
-      return false;
-    }
+    await this.#roomLastUpdateMap.set(room.id, `${Date.now()}`);
     return data;
   }
-  leave(token: Token): boolean {
-    const room = this.getRoomInfoWhereUserAreJoin(token);
+  async leave(token: Token): Promise<boolean> {
+    const room = await this.getRoomInfoWhereUserAreJoin(token);
     if (!room) {
-      console.log("error", "cannot find room.");
+      console.log('error', 'cannot find room.');
       return false;
     }
-    const lock = this.#lockRoom(room.id);
-    if (!lock) {
-      console.log("error", "failed lock.");
-      return false;
-    }
-    if (this.#userRoomMap.has(token)) {
+    const has = await this.#userRoomMap.has(token);
+    if (has) {
       this.#userRoomMap.delete(token);
     }
-    if (this.#roomMap.has(room.id)) {
+    const roomHas = await this.#roomMap.has(room.id);
+    if (roomHas) {
       for (const user of room.users) {
-        if (user && this.#userRoomMap.has(user)) {
-          this.#userRoomMap.delete(user);
+        if (user) {
+          await this.#userRoomMap.delete(user);
         }
       }
       this.#roomMap.delete(room.id);
     }
-    const index = this.#waitRooms.findIndex((id) => id === room.id);
-    if (index >= 0) {
-      delete this.#waitRooms[index];
-    }
-    const unlock = this.#unlockRoom(room.id);
-    if (!unlock) {
-      console.log("error", "failed unlock.");
-      return false;
-    }
+    this.#waitRooms.delete(room.id);
     return true;
   }
-  messages(token: Token): RoomLog | null {
-    const room = this.getRoomInfoWhereUserAreJoin(token);
+  async messages(token: Token): Promise<RoomLog | null> {
+    const room = await this.getRoomInfoWhereUserAreJoin(token);
     if (!room) {
-      console.log("error", `can not found room[token: ${token}].`);
+      console.log('error', `can not found room[token: ${token}].`);
       return null;
     }
     const chatPath = room.chatPath;
     if (chatPath) {
-      const textj = fs.readFileSync(chatPath, "utf-8");
+      const textj = fs.readFileSync(chatPath, 'utf-8');
       const data = JSON.parse(textj);
       return data;
     } else {
-      console.log("error", `not found room path[path: ${chatPath}].`);
+      console.log('error', `not found room path[path: ${chatPath}].`);
       return null;
     }
   }
   // 後に別ファイルに移動するかも
-  #shuffleArray(array: any[]): any[] {
+  #shuffleArray<V>(array: V[]): V[] {
     return array.slice().sort(() => Math.random() - Math.random());
   }
-  sendRandomTopic(token: Token): boolean {
-    const room = this.getRoomInfoWhereUserAreJoin(token);
+  async sendRandomTopic(token: Token): Promise<boolean> {
+    const room = await this.getRoomInfoWhereUserAreJoin(token);
     if (!room) {
-      console.log("error", `can not found room[token: ${token}].`);
+      console.log('error', `can not found room[token: ${token}].`);
       return false;
     }
     const topic = this.#shuffleArray(topics)[0];
     const msg = `話題BOXごそごそ.... ${topic}!${topic}についてなんでも話してみよう`;
-    this.#chat("info", token, msg);
+    this.#chat('info', token, msg);
     return false;
   }
 }
