@@ -14,7 +14,11 @@ interface IProps {
 
 function viewLog(log: IChat | ILog, index: number) {
   const ch = log as IChat;
-  return <LogChatBubble chat={ch} key={index} />;
+  if (log.action === "chat" || log.action === "info") {
+    return <LogChatBubble chat={ch} key={index} />;
+  } else {
+    return <LogBubble log={ch} key={index} />;
+  }
 }
 
 const ChatWindow: React.FC<IProps> = ({

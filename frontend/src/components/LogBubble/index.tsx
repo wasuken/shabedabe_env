@@ -1,6 +1,6 @@
 import React from "react";
 import styles from "./index.module.css";
-import { IChat, ILog } from "@/types";
+import { ILog } from "@/types";
 
 const actionDescMap: Map<string, string> = new Map();
 
@@ -25,7 +25,7 @@ const LogBubble: React.FC<LogBubbleProps> = (props) => {
             isMine ? styles.myBubble : styles.otherBubble
           }`}
         >
-          [{isMine ? "あなた" : "相手"}]
+          <small>[{isMine ? "あなた" : "相手"}]</small>
           <br />
           {actionDesc}
           <div className={styles.time}>
