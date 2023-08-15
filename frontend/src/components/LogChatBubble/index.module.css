@@ -2,7 +2,8 @@
   padding: 10px;
   border-radius: 20px;
   margin: 5px;
-  max-width: 300px;
+  max-width: 80%;
+  word-break: break-all;
 }
 
 .myBubble {

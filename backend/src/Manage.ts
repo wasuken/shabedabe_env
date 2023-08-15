@@ -289,6 +289,7 @@ export default class Manage {
     if (!room) {
       return false;
     }
+    const m = msg.length > 100 ? msg.slice(0, 100) : msg;
     const chatPath = `/chat/${room.id}`;
 
     const textj = fs.readFileSync(chatPath, 'utf-8');

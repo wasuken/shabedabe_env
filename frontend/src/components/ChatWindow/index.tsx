@@ -32,7 +32,7 @@ const ChatWindow: React.FC<IProps> = ({
   const ref = useRef<HTMLDivElement>(null);
 
   const handleSend = () => {
-    if (inputChat.trim() !== "") {
+    if (inputChat.trim() !== "" && inputChat.length <= 100) {
       const chat: IChat = {
         message: inputChat.trim(),
         isMine: true,

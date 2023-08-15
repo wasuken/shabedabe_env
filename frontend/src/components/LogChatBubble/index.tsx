@@ -10,18 +10,16 @@ const LogChatBubble: React.FC<ChatBubbleProps> = (props) => {
   const { isMine, message, createdAt } = props.chat;
   return (
     <div className={isMine ? styles.myLine : styles.otherLine}>
-      <div>
-        <div
-          className={`${styles.bubble} ${
-            isMine ? styles.myBubble : styles.otherBubble
-          }`}
-        >
-          <small>[{isMine ? "あなた" : "相手"}]</small>
-          <br />
-          {message}
-          <div className={styles.time}>
-            <small>{createdAt.toLocaleTimeString()}</small>
-          </div>
+      <div
+        className={`${styles.bubble} ${
+          isMine ? styles.myBubble : styles.otherBubble
+        }`}
+      >
+        <small>[{isMine ? "あなた" : "相手"}]</small>
+        <br />
+        {message}
+        <div className={styles.time}>
+          <small>{createdAt.toLocaleTimeString()}</small>
         </div>
       </div>
     </div>
