@@ -12,8 +12,6 @@ import {
 config();
 
 export default class Manage {
-  // TODO ここらへんの入れ替え処理は別プロセスにしたほうがいいかもredisとかで
-  //
   // チャット部屋変数
   #roomMap: RedisClientMapWrapper<RoomId, IRoom>;
   // ユーザー部屋参加変数
@@ -300,7 +298,7 @@ export default class Manage {
       {
         action: action,
         user: token,
-        message: msg,
+        message: m,
         createdAt: d,
       },
     ];
