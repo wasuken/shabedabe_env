@@ -1,6 +1,14 @@
-import fs from 'fs';
 import crypto from 'crypto';
-import { Action, Token, RoomId, IRoom, RoomLog, IUserChatAction, topics } from './types';
+import {
+  Action,
+  Token,
+  RoomId,
+  IRoom,
+  RoomLog,
+  topics,
+  ILoggingAction,
+  IUserAction,
+} from './types';
 import { config } from 'dotenv';
 import { RedisClientType, createClient } from 'redis';
 import {
@@ -8,6 +16,7 @@ import {
   RedisClientSetsMapper,
   RedisClientKVWrapper,
 } from './RedisClientWrapper';
+import { generateSHA256Hash } from './util';
 
 config();
 
@@ -38,37 +47,33 @@ export default class Manage {
   // 2. #roomMapにユーザーを登録
   // 3. #userRoomMapにユーザーを登録
   // 4. #waitRoomsにユーザーを追加
-  async createRoom(token: string, dirPath: string): Promise<RoomId | null> {
+  async createRoom(token: string): Promise<[RoomId, RoomLog] | null> {
     const id = crypto.randomUUID();
-    const chatPath = `${dirPath}/${id}`;
-    if (fs.existsSync(chatPath)) {
-      return this.createRoom(token, chatPath);
-    } else {
-      const d = new Date();
-      const log: RoomLog = [
-        {
-          action: 'create',
-          user: token,
-          createdAt: d,
-        },
-        {
-          action: 'join',
-          user: token,
-          createdAt: d,
-        },
-      ];
-      fs.writeFileSync(chatPath, JSON.stringify(log));
-    }
-    await this.#roomMap.set(id, { id, users: [token, undefined], chatPath });
+    const d = new Date();
+    const roomLog: RoomLog = [
+      {
+        action: 'create',
+        user: token,
+        createdAt: d,
+        message: '',
+      },
+      {
+        action: 'join',
+        user: token,
+        createdAt: d,
+        message: '',
+      },
+    ];
+    await this.#roomMap.set(id, { id, users: [token, undefined], roomLog });
     await this.#userRoomMap.set(token, id);
     await this.#waitRooms.push(id);
-    return id;
+    return [id, roomLog];
   }
 
   // そこそこ長いので関数化
   // Goみたいな書き方してる
   // ここではTSの言葉で話せ
-  async joinRoom(token: string): Promise<RoomId | null> {
+  async joinRoom(token: string): Promise<[RoomId, RoomLog] | null> {
     // 待機部屋あるなら参加
     const roomId = await this.#waitRooms.pop();
     if (!roomId) {
@@ -80,23 +85,21 @@ export default class Manage {
     }
     const [a] = room.users;
     room.users = [a, token];
-    await this.#roomMap.set(roomId, room);
-    await this.#userRoomMap.set(token, roomId);
-    const chatPath = `/chat/${room.id}`;
 
-    const textj = fs.readFileSync(chatPath, 'utf-8');
-    let data = JSON.parse(textj);
-    const d = new Date();
-    data = [
-      ...data,
+    const roomLog: RoomLog = [
       {
         action: 'join',
         user: token,
-        createdAt: d,
+        createdAt: new Date(),
+        message: '',
       },
     ];
-    fs.writeFileSync(room.chatPath, JSON.stringify(data));
-    return roomId;
+
+    room.roomLog = [...room.roomLog, ...roomLog];
+
+    await this.#roomMap.set(roomId, room);
+    await this.#userRoomMap.set(token, roomId);
+    return [roomId, roomLog];
   }
 
   async getRoomInfoWhereUserAreJoin(token: Token): Promise<IRoom | null> {
@@ -245,19 +248,19 @@ export default class Manage {
   isUserJoined(token: Token) {
     return this.#userRoomMap.has(token);
   }
-  async createOrJoinRoom(token: Token): Promise<RoomId | null> {
-    let rid: string = '';
+  async createOrJoinRoom(token: Token): Promise<[RoomId, RoomLog] | null> {
+    let rid: [RoomId, RoomLog] = ['', []];
     const len = await this.#waitRooms.length();
     if (len > 0) {
       const roomId = await this.joinRoom(token);
       if (!roomId) {
         console.log('error', 'failed join room');
-        return rid;
+        return null;
       }
       rid = roomId;
     } else {
       // 待機部屋0なら作る
-      const _rid = await this.createRoom(token, '/chat');
+      const _rid = await this.createRoom(token);
       if (_rid) {
         rid = _rid;
       } else {
@@ -265,7 +268,7 @@ export default class Manage {
         return null;
       }
     }
-    this.#roomLastUpdateMap.set(rid, `${Date.now()}`);
+    this.#roomLastUpdateMap.set(rid[0], `${Date.now()}`);
     return rid;
   }
   // tokenに基づくルームの最終更新時間(unix値)を返却する。
@@ -279,34 +282,28 @@ export default class Manage {
     }
     return null;
   }
-  async chat(token: Token, msg: string): Promise<IUserChatAction | boolean> {
+  async chat(token: Token, msg: string): Promise<ILoggingAction | false> {
     return this.#chat('chat', token, msg);
   }
-  async #chat(action: Action, token: Token, msg: string): Promise<IUserChatAction | boolean> {
+  async #chat(action: Action, token: Token, msg: string): Promise<ILoggingAction | false> {
     const room = await this.getRoomInfoWhereUserAreJoin(token);
     if (!room) {
       return false;
     }
     const m = msg.length > 100 ? msg.slice(0, 100) : msg;
-    const chatPath = `/chat/${room.id}`;
+    const actionObj = {
+      action: action,
+      user: token,
+      message: m,
+      createdAt: new Date(),
+    };
 
-    const textj = fs.readFileSync(chatPath, 'utf-8');
-    let data = JSON.parse(textj);
-    const d = new Date();
-    data = [
-      ...data,
-      {
-        action: action,
-        user: token,
-        message: m,
-        createdAt: d,
-      },
-    ];
-    fs.writeFileSync(room.chatPath, JSON.stringify(data));
+    room.roomLog = [...room.roomLog, actionObj];
     await this.#roomLastUpdateMap.set(room.id, `${Date.now()}`);
-    return data;
+    await this.#roomMap.set(room.id, room);
+    return actionObj;
   }
-  async leave(token: Token): Promise<boolean> {
+  async leave(token: Token): Promise<ILoggingAction | false> {
     const room = await this.getRoomInfoWhereUserAreJoin(token);
     if (!room) {
       console.log('error', 'cannot find room.');
@@ -326,7 +323,12 @@ export default class Manage {
       this.#roomMap.delete(room.id);
     }
     this.#waitRooms.delete(room.id);
-    return true;
+    return {
+      action: 'leave',
+      user: token,
+      message: 'leave user',
+      createdAt: new Date(),
+    };
   }
   async messages(token: Token): Promise<RoomLog | null> {
     const room = await this.getRoomInfoWhereUserAreJoin(token);
@@ -334,15 +336,7 @@ export default class Manage {
       console.log('error', `can not found room[token: ${token}].`);
       return null;
     }
-    const chatPath = room.chatPath;
-    if (chatPath) {
-      const textj = fs.readFileSync(chatPath, 'utf-8');
-      const data = JSON.parse(textj);
-      return data;
-    } else {
-      console.log('error', `not found room path[path: ${chatPath}].`);
-      return null;
-    }
+    return room.roomLog;
   }
   // 後に別ファイルに移動するかも
   #shuffleArray<V>(array: V[]): V[] {
@@ -357,6 +351,6 @@ export default class Manage {
     const topic = this.#shuffleArray(topics)[0];
     const msg = `話題BOXごそごそ.... ${topic}!${topic}についてなんでも話してみよう`;
     this.#chat('info', token, msg);
-    return false;
+    return true;
   }
 }

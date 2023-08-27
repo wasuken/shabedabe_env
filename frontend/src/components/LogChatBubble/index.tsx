@@ -1,9 +1,9 @@
 import React from "react";
 import styles from "./index.module.css";
-import { IChat } from "@/types";
+import { IUserLog } from "@/types";
 
 type ChatBubbleProps = {
-  chat: IChat;
+  chat: IUserLog;
 };
 
 const LogChatBubble: React.FC<ChatBubbleProps> = (props) => {

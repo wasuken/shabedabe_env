@@ -1,13 +1,16 @@
 type Action = "create" | "join" | "leave" | "chat" | "info";
 
-export interface ILog {
+export interface IServerLog {
   action: Action;
-  isMine: boolean;
-  token: string;
+  userHashToken: string;
   createdAt: Date;
   message: string;
 }
 
-export interface IChat extends ILog {
+export interface IUserLog extends IServerLog {
+  isMine: boolean;
+}
+
+export interface IChat extends IUserLog {
   action: "chat";
 }

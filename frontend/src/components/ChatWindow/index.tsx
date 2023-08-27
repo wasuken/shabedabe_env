@@ -1,30 +1,18 @@
 import React, { useEffect, useState, useRef } from "react";
-import LogBubble from "../LogBubble";
 import LogChatBubble from "../LogChatBubble";
 import styles from "./index.module.css";
-import { ILog, IChat } from "@/types";
+import { IUserLog } from "@/types";
 
 interface IProps {
-  token: string;
-  logs: (ILog | IChat)[];
-  sendChat: (msg: IChat) => Promise<void>;
-  leave: () => Promise<Response>;
-  requestTopic: () => Promise<Response>;
-}
-
-function viewLog(log: IChat | ILog, index: number) {
-  const ch = log as IChat;
-  if (log.action === "chat" || log.action === "info") {
-    return <LogChatBubble chat={ch} key={index} />;
-  } else {
-    return <LogBubble log={ch} key={index} />;
-  }
+  logs: IUserLog[];
+  sendChat: (msg: string) => void;
+  leave: () => void;
+  requestTopic: () => void;
 }
 
 const ChatWindow: React.FC<IProps> = ({
   logs,
   sendChat,
-  token,
   leave,
   requestTopic,
 }) => {
@@ -33,14 +21,7 @@ const ChatWindow: React.FC<IProps> = ({
 
   const handleSend = () => {
     if (inputChat.trim() !== "" && inputChat.length <= 100) {
-      const chat: IChat = {
-        message: inputChat.trim(),
-        isMine: true,
-        token: token,
-        createdAt: new Date(),
-        action: "chat",
-      };
-      sendChat(chat);
+      sendChat(inputChat.trim());
       setInputChat("");
     }
   };
@@ -78,7 +59,9 @@ const ChatWindow: React.FC<IProps> = ({
         </button>
       </div>
       <div className={styles.messageContainer} ref={ref}>
-        {logs.map((msg, index) => viewLog(msg, index))}
+        {logs.map((msg, index) => (
+          <LogChatBubble chat={msg} key={index} />
+        ))}
       </div>
       <div className={styles.inputContainer}>
         <input

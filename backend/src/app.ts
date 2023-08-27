@@ -2,11 +2,77 @@ import express from 'express';
 const app = express();
 import { Request, Response } from 'express';
 import * as bodyParser from 'body-parser';
+import { Server } from 'socket.io';
 import Manage from './Manage';
+import { IUserAction, convActionLToU } from './types';
+import { generateSHA256Hash } from './util';
+
+const io = new Server({
+  cors: {
+    origin: '*', // ここは適切に設定する
+    methods: ['GET', 'POST'],
+  },
+});
+io.on('connect_error', (err) => {
+  console.log('con_err', err);
+});
+const chatRoomNamespace = io.of('/room');
+
+chatRoomNamespace.on('connect_error', (err) => {
+  console.log('/room/con_err', err);
+});
+
+chatRoomNamespace.on('connection', (socket) => {
+  socket.on('joinRoom', async (token: string) => {
+    console.log('ws', 'joinRoom');
+    const room = await mng.createOrJoinRoom(token);
+    console.log(room);
+    if (room) {
+      socket.join(room[0]);
+      for (const action of room[1]) {
+        socket.to(room[0]).emit('message', convActionLToU(action));
+      }
+    }
+  });
+
+  // ルームからの退出要求を受け取る
+  socket.on('leaveRoom', async (token: string) => {
+    console.log('ws', 'leaveRoom');
+    const room = await mng.getRoomInfoWhereUserAreJoin(token);
+    if (room) {
+      const leaveAction = await mng.leave(token);
+      if (leaveAction) {
+        socket.leave(room.id);
+        socket.to(room.id).emit('message', convActionLToU(leaveAction));
+      }
+    }
+  });
+
+  // メッセージを受け取って、同じルームのユーザーに送信する
+  socket.on('message', async (token: string, message: string) => {
+    console.log('ws', 'message');
+    const room = await mng.getRoomInfoWhereUserAreJoin(token);
+    const chatAction = await mng.chat(token, message);
+    if (!chatAction) return;
+    const userAction: IUserAction = {
+      ...chatAction,
+      userHashToken: generateSHA256Hash(chatAction.user),
+    };
+    console.log(userAction);
+    if (room) {
+      chatRoomNamespace.in(room.id).emit('message', userAction);
+      // socket.to(room.id).emit('message', userAction);
+      // socket.emit('message', userAction);
+    }
+  });
+});
+
+io.listen(3001);
+
 app.use(
   bodyParser.urlencoded({
     extended: true,
-  })
+  }),
 );
 app.use(bodyParser.json());
 
