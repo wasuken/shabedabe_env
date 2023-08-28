@@ -1,14 +1,5 @@
 import crypto from 'crypto';
-import {
-  Action,
-  Token,
-  RoomId,
-  IRoom,
-  RoomLog,
-  topics,
-  ILoggingAction,
-  IUserAction,
-} from './types';
+import { Action, Token, RoomId, IRoom, RoomLog, topics, ILoggingAction } from './types';
 import { config } from 'dotenv';
 import { RedisClientType, createClient } from 'redis';
 import {
@@ -16,7 +7,6 @@ import {
   RedisClientSetsMapper,
   RedisClientKVWrapper,
 } from './RedisClientWrapper';
-import { generateSHA256Hash } from './util';
 
 config();
 
@@ -47,7 +37,7 @@ export default class Manage {
   // 2. #roomMapにユーザーを登録
   // 3. #userRoomMapにユーザーを登録
   // 4. #waitRoomsにユーザーを追加
-  async createRoom(token: string): Promise<[RoomId, RoomLog] | null> {
+  async createRoom(token: string): Promise<IRoom | null> {
     const id = crypto.randomUUID();
     const d = new Date();
     const roomLog: RoomLog = [
@@ -64,16 +54,17 @@ export default class Manage {
         message: '',
       },
     ];
-    await this.#roomMap.set(id, { id, users: [token, undefined], roomLog });
+    const room: IRoom = { id, users: [token, undefined], roomLog };
+    await this.#roomMap.set(id, room);
     await this.#userRoomMap.set(token, id);
     await this.#waitRooms.push(id);
-    return [id, roomLog];
+    return room;
   }
 
   // そこそこ長いので関数化
   // Goみたいな書き方してる
   // ここではTSの言葉で話せ
-  async joinRoom(token: string): Promise<[RoomId, RoomLog] | null> {
+  async joinRoom(token: string): Promise<IRoom | null> {
     // 待機部屋あるなら参加
     const roomId = await this.#waitRooms.pop();
     if (!roomId) {
@@ -99,7 +90,7 @@ export default class Manage {
 
     await this.#roomMap.set(roomId, room);
     await this.#userRoomMap.set(token, roomId);
-    return [roomId, roomLog];
+    return room;
   }
 
   async getRoomInfoWhereUserAreJoin(token: Token): Promise<IRoom | null> {
@@ -248,28 +239,27 @@ export default class Manage {
   isUserJoined(token: Token) {
     return this.#userRoomMap.has(token);
   }
-  async createOrJoinRoom(token: Token): Promise<[RoomId, RoomLog] | null> {
-    let rid: [RoomId, RoomLog] = ['', []];
+  async createOrJoinRoom(token: Token): Promise<IRoom | null> {
     const len = await this.#waitRooms.length();
     if (len > 0) {
-      const roomId = await this.joinRoom(token);
-      if (!roomId) {
+      const room = await this.joinRoom(token);
+      if (room) {
+        this.#roomLastUpdateMap.set(room.id, `${Date.now()}`);
+        return room;
+      } else {
         console.log('error', 'failed join room');
-        return null;
       }
-      rid = roomId;
     } else {
       // 待機部屋0なら作る
-      const _rid = await this.createRoom(token);
-      if (_rid) {
-        rid = _rid;
+      const room = await this.createRoom(token);
+      if (room) {
+        this.#roomLastUpdateMap.set(room.id, `${Date.now()}`);
+        return room;
       } else {
         console.log('error', 'failed create room');
-        return null;
       }
     }
-    this.#roomLastUpdateMap.set(rid[0], `${Date.now()}`);
-    return rid;
+    return null;
   }
   // tokenに基づくルームの最終更新時間(unix値)を返却する。
   // 存在しなければnullを返す
@@ -282,13 +272,13 @@ export default class Manage {
     }
     return null;
   }
-  async chat(token: Token, msg: string): Promise<ILoggingAction | false> {
+  async chat(token: Token, msg: string): Promise<ILoggingAction | null> {
     return this.#chat('chat', token, msg);
   }
-  async #chat(action: Action, token: Token, msg: string): Promise<ILoggingAction | false> {
+  async #chat(action: Action, token: Token, msg: string): Promise<ILoggingAction | null> {
     const room = await this.getRoomInfoWhereUserAreJoin(token);
     if (!room) {
-      return false;
+      return null;
     }
     const m = msg.length > 100 ? msg.slice(0, 100) : msg;
     const actionObj = {
@@ -303,11 +293,11 @@ export default class Manage {
     await this.#roomMap.set(room.id, room);
     return actionObj;
   }
-  async leave(token: Token): Promise<ILoggingAction | false> {
+  async leave(token: Token): Promise<ILoggingAction | null> {
     const room = await this.getRoomInfoWhereUserAreJoin(token);
     if (!room) {
       console.log('error', 'cannot find room.');
-      return false;
+      return null;
     }
     const has = await this.#userRoomMap.has(token);
     if (has) {
@@ -342,15 +332,14 @@ export default class Manage {
   #shuffleArray<V>(array: V[]): V[] {
     return array.slice().sort(() => Math.random() - Math.random());
   }
-  async sendRandomTopic(token: Token): Promise<boolean> {
+  async sendRandomTopic(token: Token): Promise<ILoggingAction | null> {
     const room = await this.getRoomInfoWhereUserAreJoin(token);
     if (!room) {
       console.log('error', `can not found room[token: ${token}].`);
-      return false;
+      return null;
     }
     const topic = this.#shuffleArray(topics)[0];
     const msg = `話題BOXごそごそ.... ${topic}!${topic}についてなんでも話してみよう`;
-    this.#chat('info', token, msg);
-    return true;
+    return this.#chat('info', token, msg);
   }
 }

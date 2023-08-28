@@ -14,9 +14,8 @@ const useChatRoom = (token: string | null) => {
 
     newSocket.emit("joinRoom", token);
 
-    newSocket.on("message", (message: IServerLog) => {
-      console.log(message);
-      const hashv = generateSHA256Hash(token);
+    newSocket.on("message", async (message: IServerLog) => {
+      const hashv = await generateSHA256Hash(token);
       setMessages((prevMessages) => [
         ...prevMessages,
         {

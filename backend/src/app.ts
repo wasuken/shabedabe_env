@@ -4,8 +4,7 @@ import { Request, Response } from 'express';
 import * as bodyParser from 'body-parser';
 import { Server } from 'socket.io';
 import Manage from './Manage';
-import { IUserAction, convActionLToU } from './types';
-import { generateSHA256Hash } from './util';
+import { convActionLToU } from './types';
 
 const io = new Server({
   cors: {
@@ -26,11 +25,10 @@ chatRoomNamespace.on('connection', (socket) => {
   socket.on('joinRoom', async (token: string) => {
     console.log('ws', 'joinRoom');
     const room = await mng.createOrJoinRoom(token);
-    console.log(room);
     if (room) {
-      socket.join(room[0]);
-      for (const action of room[1]) {
-        socket.to(room[0]).emit('message', convActionLToU(action));
+      socket.join(room.id);
+      for (const action of room.roomLog) {
+        chatRoomNamespace.in(room.id).emit('message', convActionLToU(action));
       }
     }
   });
@@ -52,17 +50,21 @@ chatRoomNamespace.on('connection', (socket) => {
   socket.on('message', async (token: string, message: string) => {
     console.log('ws', 'message');
     const room = await mng.getRoomInfoWhereUserAreJoin(token);
-    const chatAction = await mng.chat(token, message);
-    if (!chatAction) return;
-    const userAction: IUserAction = {
-      ...chatAction,
-      userHashToken: generateSHA256Hash(chatAction.user),
-    };
-    console.log(userAction);
     if (room) {
-      chatRoomNamespace.in(room.id).emit('message', userAction);
-      // socket.to(room.id).emit('message', userAction);
-      // socket.emit('message', userAction);
+      const action = await mng.chat(token, message);
+      if (action) {
+        chatRoomNamespace.in(room.id).emit('message', convActionLToU(action));
+      }
+    }
+  });
+  socket.on('topic', async (token: string) => {
+    console.log('ws', 'message');
+    const room = await mng.getRoomInfoWhereUserAreJoin(token);
+    if (room) {
+      const action = await mng.sendRandomTopic(token);
+      if (action) {
+        chatRoomNamespace.in(room.id).emit('message', convActionLToU(action));
+      }
     }
   });
 });

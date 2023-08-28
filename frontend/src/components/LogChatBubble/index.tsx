@@ -6,8 +6,15 @@ type ChatBubbleProps = {
   chat: IUserLog;
 };
 
+const actionDescMap: Map<string, string> = new Map();
+actionDescMap.set("join", "ユーザーがルームに参加しました");
+actionDescMap.set("create", "ルームが作成されました");
+actionDescMap.set("leave", "ユーザーがルームから退出しました");
+actionDescMap.set("info", "ルーム情報");
+
 const LogChatBubble: React.FC<ChatBubbleProps> = (props) => {
-  const { isMine, message, createdAt } = props.chat;
+  const { action, isMine, message, createdAt } = props.chat;
+  const actionDesc = actionDescMap.get(action);
   return (
     <div className={isMine ? styles.myLine : styles.otherLine}>
       <div
@@ -17,7 +24,8 @@ const LogChatBubble: React.FC<ChatBubbleProps> = (props) => {
       >
         <small>[{isMine ? "あなた" : "相手"}]</small>
         <br />
-        {message}
+        {message.length <= 0 && actionDesc && actionDesc}
+        {message.length > 0 && message}
         <div className={styles.time}>
           <small>{createdAt.toLocaleTimeString()}</small>
         </div>
