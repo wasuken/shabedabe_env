@@ -28,7 +28,10 @@ chatRoomNamespace.on('connection', (socket) => {
     if (room) {
       socket.join(room.id);
       for (const action of room.roomLog) {
-        chatRoomNamespace.in(room.id).emit('message', convActionLToU(action));
+        socket.emit('message', convActionLToU(action));
+      }
+      if (room.users[1]) {
+        socket.to(room.id).emit('message', convActionLToU(room.roomLog.reverse()[0]));
       }
     }
   });

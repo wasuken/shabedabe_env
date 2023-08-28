@@ -43,6 +43,7 @@ const useChatRoom = (token: string | null) => {
     if (socket) {
       socket.emit("leaveRoom", token);
       socket.close();
+      setMessages([]);
     }
   };
   const requestTopic = () => {
