@@ -2,6 +2,8 @@ import crypto from 'crypto';
 import { Action, Token, RoomId, IRoom, RoomLog, topics, ILoggingAction } from './types';
 import { config } from 'dotenv';
 import { RedisClientType, createClient } from 'redis';
+import * as winston from 'winston';
+import makeLogger, { LogStage } from './Logger';
 import {
   RedisClientMapWrapper,
   RedisClientSetsMapper,
@@ -12,33 +14,43 @@ config();
 
 export default class Manage {
   // チャット部屋変数
-  #roomMap: RedisClientMapWrapper<RoomId, IRoom>;
+  private roomMap: RedisClientMapWrapper<RoomId, IRoom>;
   // ユーザー部屋参加変数
-  #userRoomMap: RedisClientKVWrapper;
+  private userRoomMap: RedisClientKVWrapper;
   // 参加待部屋変数
-  #waitRooms: RedisClientSetsMapper;
+  private waitRooms: RedisClientSetsMapper;
   // 部屋の最新更新日
-  #roomLastUpdateMap: RedisClientKVWrapper;
+  private roomLastUpdateMap: RedisClientKVWrapper;
   // redis client
-  #client: RedisClientType;
+  private client: RedisClientType;
 
-  constructor() {
-    this.#client = createClient({ url: process.env.REDIS_URL });
-    this.#client.on('error', (err) => console.log('Redis Client Error', err));
-    this.#client.connect().then(() => console.log('info', 'connected'));
+  private logger: winston.Logger;
 
-    this.#roomMap = new RedisClientMapWrapper(this.#client, 'roomMap');
-    this.#userRoomMap = new RedisClientKVWrapper(this.#client, 'userRoomMap');
-    this.#waitRooms = new RedisClientSetsMapper(this.#client, 'waitRooms');
-    this.#roomLastUpdateMap = new RedisClientKVWrapper(this.#client, 'roomLastUpdateMap');
+  constructor(logger: winston.Logger | null) {
+    this.client = createClient({ url: process.env.REDIS_URL });
+    this.client.on('error', (err) => console.log('Redis Client Error', err));
+    this.client.connect().then(() => console.log('info', 'connected'));
+
+    this.roomMap = new RedisClientMapWrapper(this.client, 'roomMap');
+    this.userRoomMap = new RedisClientKVWrapper(this.client, 'userRoomMap');
+    this.waitRooms = new RedisClientSetsMapper(this.client, 'waitRooms');
+    this.roomLastUpdateMap = new RedisClientKVWrapper(this.client, 'roomLastUpdateMap');
+
+    const stage = (process.env.LOG_STAGE as LogStage) ?? 'development';
+    this.logger = logger ?? makeLogger('/var/log/app', 'backend', stage);
   }
 
   // 1. ルームファイルを作成
-  // 2. #roomMapにユーザーを登録
-  // 3. #userRoomMapにユーザーを登録
-  // 4. #waitRoomsにユーザーを追加
+  // 2. roomMapにユーザーを登録
+  // 3. userRoomMapにユーザーを登録
+  // 4. waitRoomsにユーザーを追加
   async createRoom(token: string): Promise<IRoom | null> {
     const id = crypto.randomUUID();
+    const data = {
+      token,
+      roomId: id,
+    };
+    this.logger.debug(`create room: ${JSON.stringify(data)}`);
     const d = new Date();
     const roomLog: RoomLog = [
       {
@@ -55,9 +67,9 @@ export default class Manage {
       },
     ];
     const room: IRoom = { id, users: [token, undefined], roomLog };
-    await this.#roomMap.set(id, room);
-    await this.#userRoomMap.set(token, id);
-    await this.#waitRooms.push(id);
+    await this.roomMap.set(id, room);
+    await this.userRoomMap.set(token, id);
+    await this.waitRooms.push(id);
     return room;
   }
 
@@ -66,11 +78,11 @@ export default class Manage {
   // ここではTSの言葉で話せ
   async joinRoom(token: string): Promise<IRoom | null> {
     // 待機部屋あるなら参加
-    const roomId = await this.#waitRooms.pop();
+    const roomId = await this.waitRooms.pop();
     if (!roomId) {
       return null;
     }
-    const room = await this.#roomMap.get(roomId);
+    const room = await this.roomMap.get(roomId);
     if (!room) {
       return null;
     }
@@ -88,17 +100,17 @@ export default class Manage {
 
     room.roomLog = [...room.roomLog, ...roomLog];
 
-    await this.#roomMap.set(roomId, room);
-    await this.#userRoomMap.set(token, roomId);
+    await this.roomMap.set(roomId, room);
+    await this.userRoomMap.set(token, roomId);
     return room;
   }
 
   async getRoomInfoWhereUserAreJoin(token: Token): Promise<IRoom | null> {
-    const id = await this.#userRoomMap.get(token);
+    const id = await this.userRoomMap.get(token);
     if (!id) {
       return null;
     }
-    const room = await this.#roomMap.get(id);
+    const room = await this.roomMap.get(id);
     if (!room) {
       return null;
     }
@@ -106,10 +118,10 @@ export default class Manage {
   }
 
   //  genRoomMapTableHTML() {
-  //    const keys = Array.from(this.#roomMap.keys());
+  //    const keys = Array.from(this.roomMap.keys());
   //    let roomListS = '';
   //    for (const k of keys) {
-  //      const room = this.#roomMap.get(k);
+  //      const room = this.roomMap.get(k);
   //      if (room) {
   //        const [a, bb] = room?.users;
   //        const b = bb || 'empty user';
@@ -124,7 +136,7 @@ export default class Manage {
   //      }
   //    }
   //    return `
-  //    <h2>#roomMap</h2>
+  //    <h2>roomMap</h2>
   //    <table>
   //     <thead>
   //       <tr>
@@ -141,7 +153,7 @@ export default class Manage {
   //  `;
   //  }
   //  genWaitRoomHTML() {
-  //    const rooms = this.#waitRooms.map((r) => `<li>${r}</li>`).join('');
+  //    const rooms = this.waitRooms.map((r) => `<li>${r}</li>`).join('');
   //    return `
   //  <h2>Wait Rooms</h2>
   //   <ul>
@@ -151,9 +163,9 @@ export default class Manage {
   //  }
   //  genuserRoomMapTableHTML() {
   //    let userRoomPairS = '';
-  //    let keys = Array.from(this.#userRoomMap.keys());
+  //    let keys = Array.from(this.userRoomMap.keys());
   //    for (const k of keys) {
-  //      const rid = this.#userRoomMap.get(k);
+  //      const rid = this.userRoomMap.get(k);
   //      if (rid) {
   //        userRoomPairS += `
   //	<tr>
@@ -181,9 +193,9 @@ export default class Manage {
   //
   //  genLastUpdateRoomHTML() {
   //    let roomLastUpdatePairS = '';
-  //    let keys = Array.from(this.#roomLastUpdateMap.keys());
+  //    let keys = Array.from(this.roomLastUpdateMap.keys());
   //    for (const k of keys) {
-  //      const dtn = this.#roomLastUpdateMap.get(k);
+  //      const dtn = this.roomLastUpdateMap.get(k);
   //      if (dtn) {
   //        const dtf = new Date(dtn);
   //        roomLastUpdatePairS += `
@@ -195,7 +207,7 @@ export default class Manage {
   //      }
   //    }
   //    return `
-  //    <h2>#roomLastUpdateMap</h2>
+  //    <h2>roomLastUpdateMap</h2>
   //    <table>
   //     <thead>
   //       <tr>
@@ -229,22 +241,22 @@ export default class Manage {
   //	   `;
   //  }
   //reset() {
-  //  this.#roomMap.clear();
-  //  this.#userRoomMap.clear();
-  //  this.#roomLastUpdateMap.clear();
-  //  for (let i = 0; i < this.#waitRooms.length; i++) {
-  //    delete this.#waitRooms[i];
+  //  this.roomMap.clear();
+  //  this.userRoomMap.clear();
+  //  this.roomLastUpdateMap.clear();
+  //  for (let i = 0; i < this.waitRooms.length; i++) {
+  //    delete this.waitRooms[i];
   //  }
   //}
   isUserJoined(token: Token) {
-    return this.#userRoomMap.has(token);
+    return this.userRoomMap.has(token);
   }
   async createOrJoinRoom(token: Token): Promise<IRoom | null> {
-    const len = await this.#waitRooms.length();
+    const len = await this.waitRooms.length();
     if (len > 0) {
       const room = await this.joinRoom(token);
       if (room) {
-        this.#roomLastUpdateMap.set(room.id, `${Date.now()}`);
+        this.roomLastUpdateMap.set(room.id, `${Date.now()}`);
         return room;
       } else {
         console.log('error', 'failed join room');
@@ -253,7 +265,7 @@ export default class Manage {
       // 待機部屋0なら作る
       const room = await this.createRoom(token);
       if (room) {
-        this.#roomLastUpdateMap.set(room.id, `${Date.now()}`);
+        this.roomLastUpdateMap.set(room.id, `${Date.now()}`);
         return room;
       } else {
         console.log('error', 'failed create room');
@@ -264,9 +276,9 @@ export default class Manage {
   // tokenに基づくルームの最終更新時間(unix値)を返却する。
   // 存在しなければnullを返す
   async checkUpdate(token: Token): Promise<number | null> {
-    const roomId = await this.#userRoomMap.get(token);
+    const roomId = await this.userRoomMap.get(token);
     if (!roomId) return null;
-    const lUpd = await this.#roomLastUpdateMap.get(roomId);
+    const lUpd = await this.roomLastUpdateMap.get(roomId);
     if (roomId && lUpd) {
       return parseInt(lUpd);
     }
@@ -289,8 +301,8 @@ export default class Manage {
     };
 
     room.roomLog = [...room.roomLog, actionObj];
-    await this.#roomLastUpdateMap.set(room.id, `${Date.now()}`);
-    await this.#roomMap.set(room.id, room);
+    await this.roomLastUpdateMap.set(room.id, `${Date.now()}`);
+    await this.roomMap.set(room.id, room);
     return actionObj;
   }
   async leave(token: Token): Promise<ILoggingAction | null> {
@@ -299,20 +311,20 @@ export default class Manage {
       console.log('error', 'cannot find room.');
       return null;
     }
-    const has = await this.#userRoomMap.has(token);
+    const has = await this.userRoomMap.has(token);
     if (has) {
-      this.#userRoomMap.delete(token);
+      this.userRoomMap.delete(token);
     }
-    const roomHas = await this.#roomMap.has(room.id);
+    const roomHas = await this.roomMap.has(room.id);
     if (roomHas) {
       for (const user of room.users) {
         if (user) {
-          await this.#userRoomMap.delete(user);
+          await this.userRoomMap.delete(user);
         }
       }
-      this.#roomMap.delete(room.id);
+      this.roomMap.delete(room.id);
     }
-    this.#waitRooms.delete(room.id);
+    this.waitRooms.delete(room.id);
     return {
       action: 'leave',
       user: token,
@@ -329,7 +341,7 @@ export default class Manage {
     return room.roomLog;
   }
   // 後に別ファイルに移動するかも
-  #shuffleArray<V>(array: V[]): V[] {
+  shuffleArray<V>(array: V[]): V[] {
     return array.slice().sort(() => Math.random() - Math.random());
   }
   async sendRandomTopic(token: Token): Promise<ILoggingAction | null> {
@@ -338,7 +350,7 @@ export default class Manage {
       console.log('error', `can not found room[token: ${token}].`);
       return null;
     }
-    const topic = this.#shuffleArray(topics)[0];
+    const topic = this.shuffleArray(topics)[0];
     const msg = `話題BOXごそごそ.... ${topic}!${topic}についてなんでも話してみよう`;
     return this.#chat('info', token, msg);
   }
