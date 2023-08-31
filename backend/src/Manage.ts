@@ -26,7 +26,7 @@ export default class Manage {
 
   private logger: winston.Logger;
 
-  constructor(logger: winston.Logger | null) {
+  constructor(logger: winston.Logger | null = null) {
     this.client = createClient({ url: process.env.REDIS_URL });
     this.client.on('error', (err) => console.log('Redis Client Error', err));
     this.client.connect().then(() => console.log('info', 'connected'));
@@ -46,11 +46,6 @@ export default class Manage {
   // 4. waitRoomsにユーザーを追加
   async createRoom(token: string): Promise<IRoom | null> {
     const id = crypto.randomUUID();
-    const data = {
-      token,
-      roomId: id,
-    };
-    this.logger.debug(`create room: ${JSON.stringify(data)}`);
     const d = new Date();
     const roomLog: RoomLog = [
       {

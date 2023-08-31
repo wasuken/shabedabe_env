@@ -5,26 +5,50 @@ import * as bodyParser from 'body-parser';
 import { Server } from 'socket.io';
 import Manage from './Manage';
 import { convActionLToU } from './types';
+import makeLogger, { LogStage } from './Logger';
+import { config } from 'dotenv';
+
+config();
+const logDirName = process.env.LOG_DIRNAME ?? '/var/log/app';
+const logFileName = process.env.LOG_FILENAME ?? 'backend';
+const stage = (process.env.LOG_STAGE as LogStage) ?? 'development';
+// 迷ったらここに書き込む
+const baseLogger = makeLogger(logDirName, logFileName, stage);
+const errorLogger = makeLogger(logDirName, 'error', stage);
+const chatLogger = makeLogger(logDirName, 'chat', stage);
+const reqLogger = makeLogger(logDirName, 'req', stage);
 
 const io = new Server({
   cors: {
-    origin: '*', // ここは適切に設定する
+    origin: '*',
     methods: ['GET', 'POST'],
   },
 });
 io.on('connect_error', (err) => {
-  console.log('con_err', err);
+  errorLogger.error(`Socket Error: ${err}`);
 });
 const chatRoomNamespace = io.of('/room');
 
 chatRoomNamespace.on('connect_error', (err) => {
-  console.log('/room/con_err', err);
+  errorLogger.error(`chat room connection Error: ${err}`);
 });
 
 chatRoomNamespace.on('connection', (socket) => {
+  const { handshake } = socket;
+  const userData = {
+    useragent: handshake.headers['user-agent'],
+    ip: handshake.address,
+    // その他の情報
+  };
+  reqLogger.info(`new connection: ${JSON.stringify(userData)}`);
+  socket.on('disconnnect', () => {
+    reqLogger.info(`user disconnected: ${JSON.stringify(userData)}`);
+  });
+
   socket.on('joinRoom', async (token: string) => {
-    console.log('ws', 'joinRoom');
     const room = await mng.createOrJoinRoom(token);
+    baseLogger.info('joinRoom');
+    chatLogger.info(JSON.stringify(room));
     if (room) {
       socket.join(room.id);
       for (const action of room.roomLog) {
@@ -38,8 +62,9 @@ chatRoomNamespace.on('connection', (socket) => {
 
   // ルームからの退出要求を受け取る
   socket.on('leaveRoom', async (token: string) => {
-    console.log('ws', 'leaveRoom');
     const room = await mng.getRoomInfoWhereUserAreJoin(token);
+    baseLogger.info('leaveRoom');
+    chatLogger.info(JSON.stringify(room));
     if (room) {
       const leaveAction = await mng.leave(token);
       if (leaveAction) {
@@ -51,8 +76,9 @@ chatRoomNamespace.on('connection', (socket) => {
 
   // メッセージを受け取って、同じルームのユーザーに送信する
   socket.on('message', async (token: string, message: string) => {
-    console.log('ws', 'message');
     const room = await mng.getRoomInfoWhereUserAreJoin(token);
+    baseLogger.info('message');
+    chatLogger.info(JSON.stringify(room));
     if (room) {
       const action = await mng.chat(token, message);
       if (action) {
@@ -61,8 +87,9 @@ chatRoomNamespace.on('connection', (socket) => {
     }
   });
   socket.on('topic', async (token: string) => {
-    console.log('ws', 'message');
     const room = await mng.getRoomInfoWhereUserAreJoin(token);
+    baseLogger.info('topic');
+    chatLogger.info(JSON.stringify(room));
     if (room) {
       const action = await mng.sendRandomTopic(token);
       if (action) {
@@ -81,7 +108,7 @@ app.use(
 );
 app.use(bodyParser.json());
 
-const mng = new Manage();
+const mng = new Manage(baseLogger);
 
 // 管理系
 // 後ほどファイルを分ける？
