@@ -24,6 +24,7 @@ services:
       - ./backend:/app
       - /app/node_modules
       - /chat
+      - /var/log/app
   nginx:
     image: nginx:latest
     environment:
