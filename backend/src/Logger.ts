@@ -7,12 +7,7 @@ config();
 export default function makeLogger(dirname: string, filename: string, stage: LogStage) {
   const logger = winston.createLogger({
     level: 'info',
-    format: winston.format.combine(
-      winston.format.timestamp({
-        format: 'YYYY-MM-DD HH:mm:ss',
-      }),
-      winston.format.errors({ stack: true }),
-    ),
+    format: winston.format.combine(winston.format.json(), winston.format.timestamp()),
     transports: [
       new winston.transports.Console(),
       new winston.transports.File({
@@ -26,15 +21,15 @@ export default function makeLogger(dirname: string, filename: string, stage: Log
   });
 
   // 検証環境の場合、loggingをdebugレベルまで上げる
-  if (stage !== 'production') {
-    // clear()をする事によって、createLoggerの際に指定したtransportsの設定を消せる
-    logger.clear();
-    logger.add(
-      new winston.transports.Console({
-        level: 'debug',
-      }),
-    );
-  }
+  // if (stage !== 'production') {
+  //   // clear()をする事によって、createLoggerの際に指定したtransportsの設定を消せる
+  //   logger.clear();
+  //   logger.add(
+  //     new winston.transports.Console({
+  //       level: 'debug',
+  //     }),
+  //   );
+  // }
 
   return logger;
 }
