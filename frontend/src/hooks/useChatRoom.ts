@@ -27,7 +27,6 @@ const useChatRoom = (token: string | null) => {
     });
 
     return () => {
-      console.log("debug", "アンマウント処理");
       newSocket.emit("leaveRoom", token);
       newSocket.close();
     };
